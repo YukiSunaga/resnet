@@ -10,6 +10,8 @@ import datetime
 from fashion_mnist import load_fashion_mnist
 from util import to_cpu, to_gpu
 from config import GPU
+from memory_free import memfree
+
 
 start = datetime.datetime.today()
 
@@ -24,16 +26,18 @@ if GPU:
     x_test = to_gpu(x_test)
     t_test = to_gpu(t_test)
 
-epoch = 10
+epoch = 20
 mini_batch = 32
-n_res_blocks=2
-filters=16
+n_res_blocks=3
+filters=32
+batchnorm = True
 params_load = False
 params_file = "result/201904140553/params.pkl"
 
 
 
-network = ResidualNetwork(input_dim=x_train_shape[1:], filters=filters, n_res_blocks=n_res_blocks)
+network = ResidualNetwork(input_dim=x_train_shape[1:], filters=filters,
+                n_res_blocks=n_res_blocks, batchnorm=batchnorm)
 win_ch, win_row, win_col = network.input_dim
 
 if params_load:
@@ -68,6 +72,7 @@ with open(path + "h_params" + file_name + ".txt", "a") as f:
 
     f.write("n_res_blocks : " + str(n_res_blocks) + '\n')
     f.write("filters per a conv-layer : " + str(filters) + '\n')
+    f.write("batchnorm : " + str(batchnorm) + '\n')
 
     f.write("class size = " + str(network.class_size) + '\n')
     f.write("teacher : \n")
@@ -86,3 +91,8 @@ time2_minute = int(time2.days * 24 * 60 + time2.seconds / 60)
 with open(path + "h_params" + file_name + ".txt", "a") as f:
     f.write("learning timedelta : " + str(time1_minute) + "min \n")
     f.write("start to finish timedelta : " + str(time2_minute) + "min \n")
+
+'''
+if GPU:
+    memfree()
+'''

@@ -9,14 +9,15 @@ from residual_blocks import *
 
 
 class ResidualNetwork:
-    def __init__(self, input_dim=(1, 28, 28), n_res_blocks=3, filters=32, hidden_num=128,
+    def __init__(self, input_dim=(1, 28, 28), n_res_blocks=3, filters=32, hidden_num=256,
                  conv_param = {'conv_h':3, 'conv_w':3, 'pool_size':2},
-                 output_size=10, class_size=10):
+                 output_size=10, class_size=10, batchnorm=True):
         # 重みの初期化===========
         self.n_res_blocks = n_res_blocks
         self.input_dim = input_dim
         self.conv_list = [conv_param]
-        self.hidden_list = [hidden_num]
+        self.hidden_list = [hidden_num, hidden_num]
+        self.batchnorm = batchnorm
 
         pre_channel_num = input_dim[0]
 
@@ -26,22 +27,21 @@ class ResidualNetwork:
         b = {}
 
         for i, c in enumerate(self.conv_list):
-             W['conv' + str(i)] = np.sqrt(2.0 /filters) * np.random.randn(filters, pre_channel_num, c['conv_h'], c['conv_w'])
+             W['conv' + str(i)] = np.sqrt(2.0) /filters * np.random.randn(filters, pre_channel_num, c['conv_h'], c['conv_w'])
              b['conv' + str(i)] = np.zeros(filters)
              pre_channel_num = filters
              conv_out_h = conv_output_size(conv_out_h, c['conv_h'], 1, 0)
              conv_out_w = conv_output_size(conv_out_w, c['conv_w'], 1, 0)
              conv_out_h = conv_output_size(conv_out_h, c['pool_size'], c['pool_size'], 0)
              conv_out_w = conv_output_size(conv_out_w, c['pool_size'], c['pool_size'], 0)
-
         self.conv_layers = []
         for i, c in enumerate(self.conv_list):
             self.conv_layers.append(ConvPool(W=W['conv'+str(i)], bias=True, b=b['conv'+str(i)], conv_stride=1, conv_pad=0,pool_h=c['pool_size'], pool_w=c['pool_size'], pool_stride=c['pool_size'],
-                                        batchnorm=True, pool='max', pool_or_not=True))
+                                        batchnorm=batchnorm, pool='max', pool_or_not=True))
 
         self.res_blocks = []
         for i in range(self.n_res_blocks):
-            self.res_blocks.append( Residual_Block(x_shape=(pre_channel_num, conv_out_h, conv_out_w), filters=filters) )
+            self.res_blocks.append( Residual_Block(x_shape=(pre_channel_num, conv_out_h, conv_out_w), filters=filters, batchnorm=batchnorm) )
             pre_channel_num = filters
 
 
@@ -60,7 +60,7 @@ class ResidualNetwork:
 
         self.hidden_layers = []
         for i, hn in enumerate(self.hidden_list):
-            self.hidden_layers.append(AffineRelu(W=W['hidden' + str(i)], bias=True, b=b['hidden'+str(i)], batchnorm=True))
+            self.hidden_layers.append(AffineRelu(W=W['hidden' + str(i)], bias=True, b=b['hidden'+str(i)], batchnorm=batchnorm))
 
         self.last_layer = AffineSoftmaxCE(W=W['last_layer'], bias=True, b=b['last_layer'], batchnorm=True)
 
@@ -73,10 +73,13 @@ class ResidualNetwork:
     def predict(self, x, train_flg=False):
         for i, l in enumerate(self.conv_layers):
             x = l.forward(x, train_flg)
+
         for i, rb in enumerate(self.res_blocks):
             x = rb.forward(x, train_flg)
+
         for i, l in enumerate(self.hidden_layers):
             x = l.forward(x, train_flg)
+
         x = self.last_layer.forward(x,train_flg)
         return x
 
@@ -106,7 +109,7 @@ class ResidualNetwork:
 
     def loss(self, x, t, train_flg=False):
         y = self.predict(x, train_flg)
-        y = cross_entropy_error(y, t)
+        y = mean_squared_error(y, t)
         return y
 
     def accuracy(self, x, t, batch_size=100, confusion_mat=False):
@@ -167,37 +170,49 @@ class ResidualNetwork:
     def save_params(self, file_name="params.pkl"):
         conv_W = []
         conv_b = []
+        conv_bn = []
         for i, l in enumerate(self.conv_layers):
             conv_W.append(l.return_W())
             conv_b.append(l.return_b())
+            conv_bn.append(l.return_BNparams())
 
         res_W = []
         res_b = []
+        res_bn = []
 
         for i, l in enumerate(self.res_blocks):
             res_W.append(l.return_W())
             res_b.append(l.return_b())
+            res_bn.append(l.return_BNparams())
 
         hid_W = []
         hid_b = []
+        hid_bn = []
         for i, l in enumerate(self.hidden_layers):
             hid_W.append(l.return_W())
             hid_b.append(l.return_b())
+            hid_bn.append(l.return_BNparams())
 
 
         last_W = self.last_layer.return_W()
         last_b = self.last_layer.return_b()
+        last_bn = self.last_layer.return_BNparams()
 
 
         params = {}
         params['conv_W'] = conv_W
         params['conv_b'] = conv_b
+        params['conv_bn'] = conv_bn
         params['res_W'] = res_W
         params['res_b'] = res_b
+        params['res_bn'] = res_bn
         params['hid_W'] = hid_W
         params['hid_b'] = hid_b
+        params['hid_bn'] = hid_bn
         params['last_W'] = last_W
         params['last_b'] = last_b
+        params['last_bn'] = last_bn
+        params['batchnorm'] = self.batchnorm
 
         with open(file_name, 'wb') as f:
             pickle.dump(params, f)
@@ -209,12 +224,20 @@ class ResidualNetwork:
         for i, l in enumerate(self.conv_layers):
             l.set_W(params['conv_W'][i])
             l.set_b(params['conv_b'][i])
+            if params['batchnorm']:
+                l.set_BNparams(params['conv_bn'][i])
         for i, l in enumerate(self.res_blocks):
             l.set_W(params['res_W'][i])
             l.set_b(params['res_b'][i])
+            if params['batchnorm']:
+                l.set_BNparams(params['res_bn'][i])
         for i, l in enumerate(self.hidden_layers):
             l.set_W(params['hid_W'][i])
             l.set_b(params['hid_b'][i])
+            if params['batchnorm']:
+                l.set_BNparams(params['hid_bn'][i])
 
         self.last_layer.set_W(params['last_W'])
         self.last_layer.set_b(params['last_b'])
+        if params['batchnorm']:
+            l.set_BNparams(params['last_bn'][i])

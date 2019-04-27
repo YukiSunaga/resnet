@@ -11,7 +11,7 @@ class BatchNormalization:
     """
     http://arxiv.org/abs/1502.03167
     """
-    def __init__(self, gamma, beta, momentum=0.9, running_mean=None, running_var=None, optimizer='SGD', lr=0.01):
+    def __init__(self, gamma, beta, momentum=0.9, running_mean=None, running_var=None, optimizer='Adam', lr=0.001):
         self.gamma = gamma
         self.beta = beta
         self.momentum = momentum
@@ -125,6 +125,12 @@ class BatchNormalization:
 
         return dx
 
+    def return_params(self):
+        return {'gamma':self.gamma, 'beta':self.beta}
+
+    def set_params(self, params):
+        self.gamma = params['gamma']
+        self.beta = params['beta']
 
 
 class AffineRelu:
@@ -253,6 +259,17 @@ class AffineRelu:
     def set_b(self, b):
         self.b = b
 
+    def return_BNparams(self):
+        if self.batchnorm:
+            return self.BN.return_params
+        else:
+            return None
+
+    def set_BNparams(self, bnparams):
+        self.batchnorm=True
+        self.BN.set_params(bnparams)
+        self.BN_firstflg = False
+
 
 class AffineSoftmaxCE:
     def __init__(self, W, bias=False, b=None, lr=0.001, optimizer = 'Adam', batchnorm=False, dropout=False):
@@ -371,6 +388,17 @@ class AffineSoftmaxCE:
 
     def set_b(self, b):
         self.b = b
+
+    def return_BNparams(self):
+        if self.batchnorm:
+            return self.BN.return_params
+        else:
+            return None
+
+    def set_BNparams(self, bnparams):
+        self.batchnorm=True
+        self.BN.set_params(bnparams)
+        self.BN_firstflg = False
 
 
 
@@ -593,12 +621,24 @@ class ConvPool:
     def set_b(self,b):
         self.b = b
 
+    def return_BNparams(self):
+        if self.batchnorm:
+            return self.BN.return_params
+        else:
+            return None
+
+    def set_BNparams(self, bnparams):
+        self.batchnorm=True
+        self.BN.set_params(bnparams)
+        self.BN_firstflg = False
+
 
 
 class Residual_Block:
-    def __init__(self, x_shape, filters=32, filter_size=(3,3)): #x_shape = (C,H,W)
+    def __init__(self, x_shape, filters=32, filter_size=(3,3), batchnorm=True): #x_shape = (C,H,W)
         self.filters = filters
-        W = np.sqrt(2.0 /filter_size[0]) \
+        self.batchnorm = batchnorm
+        W = 1 /filter_size[0] \
                     * np.random.randn(filters, x_shape[0], filter_size[0], filter_size[1])
         b = np.zeros(filters)
 
@@ -607,16 +647,17 @@ class Residual_Block:
         out_w = conv_output_size(x_shape[2], filter_size[1], 1, 0)
         pad = int((filter_size[0] - 1)/2)
 
-        self.conv1 = ConvPool(W, bias=True, b=b, lr=0.001, conv_pad=pad, pool_or_not=False, batchnorm=True)
+        self.conv1 = ConvPool(W, bias=True, b=b, lr=0.001, conv_pad=pad,
+                            pool_or_not=False, batchnorm=batchnorm)
 
-        W = np.sqrt(2.0 /filter_size[0]) \
+        W = 1 /filter_size[0] \
                     * np.random.randn(filters, channels, filter_size[0], filter_size[1])
         b = np.zeros(filters)
         out_h = conv_output_size(out_h, filter_size[0], 1, pad)
         out_w = conv_output_size(out_w, filter_size[1], 1, pad)
 
-        self.conv2 = ConvPool(W, bias=True, b=b, lr=0.001, conv_pad=pad, pool_or_not=False, batchnorm=True)
-        del W, b
+        self.conv2 = ConvPool(W, bias=True, b=b, lr=0.001, conv_pad=pad,
+                            pool_or_not=False, batchnorm=batchnorm)
 
     def forward(self, x, train_flg=False):
         y = self.conv1.forward(x, train_flg)
@@ -627,12 +668,12 @@ class Residual_Block:
             shortcut[:, :x.shape[1]] = x
         else:
             shortcut = x
-        y = y + x
+        y = y + shortcut
         return y
 
     def backward(self, dout):
         dx = self.conv2.backward(dout)
-        dx = self.conv1.backward(dout)
+        dx = self.conv1.backward(dx)
         dx = dout + dx
         return dx
 
@@ -655,3 +696,17 @@ class Residual_Block:
     def set_b(self, b):
         self.conv1.set_b(b[0])
         self.conv2.set_b(b[1])
+
+    def return_BNparams(self):
+        if self.batchnorm:
+            bnp = []
+            bnp.append(self.conv1.return_BNparams())
+            bnp.append(self.conv2.return_BNparams())
+            return bnp
+        else:
+            return None
+
+    def set_BNparams(self, bnparams):
+        self.batchnorm=True
+        self.conv1.set_BNparams(bnparams[0])
+        self.conv2.set_BNparams(bnparams[1])
