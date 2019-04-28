@@ -663,7 +663,7 @@ class Residual_Block:
         y = self.conv1.forward(x, train_flg)
         y = self.conv2.forward(y, train_flg)
 
-        if x.shape[0] < self.filters:
+        if x.shape[1] < self.filters:
             shortcut = np.zeros((x.shape[0], self.filters, x.shape[2], x.shape[3]))
             shortcut[:, :x.shape[1]] = x
         else:
