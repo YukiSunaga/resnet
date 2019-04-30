@@ -85,26 +85,25 @@ class BatchNormalization:
 
         if self.optimizer == 'SGD':
             self.gamma -= self.lr * self.dgamma
-            if self.bias:
-                self.beta -= self.lr * self.dbeta
+            self.beta -= self.lr * self.dbeta
 
-            if self.optimizer == 'Adam':
-                if self.gm is None:
-                    self.gm = np.zeros_like(self.dgamma)
-                    self.gv = np.zeros_like(self.dgamma)
-                self.iter += 1
-                lr_t  = self.lr * np.sqrt(1.0 - beta2**self.iter) / (1.0 - beta1**self.iter)
-                self.gm += (1 - beta1) * (self.dgamma - self.gm)
-                self.gv += (1 - beta2) * (self.dgamma**2 - self.gv)
-                self.gamma = self.gamma - lr_t * self.gm / (np.sqrt(self.gv) + 1e-7)
+        else:
+            if self.gm is None:
+                self.gm = np.zeros_like(self.dgamma)
+                self.gv = np.zeros_like(self.dgamma)
+            self.iter += 1
+            lr_t  = self.lr * np.sqrt(1.0 - beta2**self.iter) / (1.0 - beta1**self.iter)
+            self.gm += (1 - beta1) * (self.dgamma - self.gm)
+            self.gv += (1 - beta2) * (self.dgamma**2 - self.gv)
+            self.gamma = self.gamma - lr_t * self.gm / (np.sqrt(self.gv) + 1e-7)
 
 
-                if self.bm is None:
-                    self.bm = np.zeros_like(self.dbeta)
-                    self.bv = np.zeros_like(self.dbeta)
-                self.bm += (1 - beta1) * (self.dbeta - self.bm)
-                self.bv += (1 - beta2) * (self.dbeta**2 - self.bv)
-                self.beta = self.beta - lr_t * self.bm / (np.sqrt(self.bv) + 1e-7)
+            if self.bm is None:
+                self.bm = np.zeros_like(self.dbeta)
+                self.bv = np.zeros_like(self.dbeta)
+            self.bm += (1 - beta1) * (self.dbeta - self.bm)
+            self.bv += (1 - beta2) * (self.dbeta**2 - self.bv)
+            self.beta = self.beta - lr_t * self.bm / (np.sqrt(self.bv) + 1e-7)
 
 
         return dx
@@ -161,6 +160,7 @@ class AffineRelu:
         self.mask = None
 
         self.optimizer = optimizer
+        self.lr = lr
 
         self.batchnorm = batchnorm
         if self.batchnorm:
@@ -219,23 +219,23 @@ class AffineRelu:
             if self.bias:
                 self.b -= self.lr * self.db
 
-            if self.optimizer == 'Adam':
-                if self.m is None:
-                    self.m = np.zeros_like(self.dW)
-                    self.v = np.zeros_like(self.dW)
-                self.iter += 1
-                lr_t  = self.lr * np.sqrt(1.0 - beta2**self.iter) / (1.0 - beta1**self.iter)
-                self.m += (1 - beta1) * (self.dW - self.m)
-                self.v += (1 - beta2) * (self.dW**2 - self.v)
-                self.W = self.W - lr_t * self.m / (np.sqrt(self.v) + 1e-7)
+        else:
+            if self.m is None:
+                self.m = np.zeros_like(self.dW)
+                self.v = np.zeros_like(self.dW)
+            self.iter += 1
+            lr_t  = self.lr * np.sqrt(1.0 - beta2**self.iter) / (1.0 - beta1**self.iter)
+            self.m += (1 - beta1) * (self.dW - self.m)
+            self.v += (1 - beta2) * (self.dW**2 - self.v)
+            self.W = self.W - lr_t * self.m / (np.sqrt(self.v) + 1e-7)
 
-                if self.bias:
-                    if self.bm is None:
-                        self.bm = np.zeros_like(self.db)
-                        self.bv = np.zeros_like(self.db)
-                    self.bm += (1 - beta1) * (self.db - self.bm)
-                    self.bv += (1 - beta2) * (self.db**2 - self.bv)
-                    self.b = self.b - lr_t * self.bm / (np.sqrt(self.bv) + 1e-7)
+            if self.bias:
+                if self.bm is None:
+                    self.bm = np.zeros_like(self.db)
+                    self.bv = np.zeros_like(self.db)
+                self.bm += (1 - beta1) * (self.db - self.bm)
+                self.bv += (1 - beta2) * (self.db**2 - self.bv)
+                self.b = self.b - lr_t * self.bm / (np.sqrt(self.bv) + 1e-7)
 
         if self.maxnorm:
             self.W = self.MN.maxnorm(self.W)
@@ -352,7 +352,7 @@ class AffineSoftmaxCE:
             self.W = self.W - self.lr * self.dW
             if self.bias:
                 self.b = self.b - self.lr * self.db
-        if self.optimizer == 'Adam':
+        else:
             if self.m is None:
                 self.m = np.zeros_like(self.dW)
                 self.v = np.zeros_like(self.dW)
@@ -585,7 +585,7 @@ class ConvPool:
             self.W = self.W - self.lr * self.dW
             if self.bias:
                 self.b = self.b - self.lr * self.db
-        if self.optimizer == 'Adam':
+        else:
             if self.m is None:
                 self.m = np.zeros_like(self.dW)
                 self.v = np.zeros_like(self.dW)
@@ -635,7 +635,7 @@ class ConvPool:
 
 
 class Residual_Block:
-    def __init__(self, x_shape, filters=32, filter_size=(3,3), batchnorm=True): #x_shape = (C,H,W)
+    def __init__(self, x_shape, filters=32, filter_size=(3,3), batchnorm=True, optimizer='Adam', lr=0.001): #x_shape = (C,H,W)
         self.filters = filters
         self.batchnorm = batchnorm
         W = 1 /filter_size[0] \
@@ -647,8 +647,8 @@ class Residual_Block:
         out_w = conv_output_size(x_shape[2], filter_size[1], 1, 0)
         pad = int((filter_size[0] - 1)/2)
 
-        self.conv1 = ConvPool(W, bias=True, b=b, lr=0.001, conv_pad=pad,
-                            pool_or_not=False, batchnorm=batchnorm)
+        self.conv1 = ConvPool(W, bias=True, b=b, conv_pad=pad,
+                            pool_or_not=False, batchnorm=batchnorm, optimizer=optimizer, lr=lr)
 
         W = 1 /filter_size[0] \
                     * np.random.randn(filters, channels, filter_size[0], filter_size[1])
@@ -656,8 +656,8 @@ class Residual_Block:
         out_h = conv_output_size(out_h, filter_size[0], 1, pad)
         out_w = conv_output_size(out_w, filter_size[1], 1, pad)
 
-        self.conv2 = ConvPool(W, bias=True, b=b, lr=0.001, conv_pad=pad,
-                            pool_or_not=False, batchnorm=batchnorm)
+        self.conv2 = ConvPool(W, bias=True, b=b, conv_pad=pad,
+                            pool_or_not=False, batchnorm=batchnorm, optimizer=optimizer, lr=lr)
 
     def forward(self, x, train_flg=False):
         y = self.conv1.forward(x, train_flg)
